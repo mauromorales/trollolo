@@ -236,17 +236,6 @@ EOT
     puts "Home page: #{o.url}"
   end
 
-  desc "get-description", "Reads description"
-  option "card-id", :desc => "Id of card", :required => true
-  def get_description
-    process_global_options options
-    require_trello_credentials
-
-    trello = TrelloWrapper.new(@@settings)
-
-    puts trello.get_description(options["card-id"])
-  end
-
   desc "set-description", "Writes description read from standard input"
   option "card-id", :desc => "Id of card", :required => true
   def set_description
@@ -368,4 +357,145 @@ EOT
       exit 1
     end
   end
+  
+  class Subcommand < Thor
+    def self.settings= s
+      @@settings = s
+    end
+    
+    def process_global_options options
+      @@settings.verbose = options[:verbose]
+      @@settings.raw = options[:raw]
+    end
+    
+    def require_trello_credentials
+      write_back = false
+  
+      if !@@settings.developer_public_key
+        puts "Put in Trello developer public key:"
+        @@settings.developer_public_key = STDIN.gets.chomp
+        write_back = true
+      end
+  
+      if !@@settings.member_token
+        puts "Put in Trello member token:"
+        @@settings.member_token = STDIN.gets.chomp
+        write_back = true
+      end
+  
+      if write_back
+        @@settings.save_config
+      end
+  
+      if !@@settings.developer_public_key || !@@settings.member_token
+        STDERR.puts "Require trello credentials in config file"
+        exit 1
+      end
+    end
+  end
+  
+  class Get < Subcommand
+    desc "lists", "Get lists"
+    option "board-id", :desc => "Id of Trello board", :required => true
+    def lists
+      process_global_options options
+      require_trello_credentials
+
+      trello = TrelloWrapper.new(@@settings)
+      board = trello.board(options["board-id"])
+      lists = board.columns
+
+      if @@settings.raw
+        puts JSON.pretty_generate lists
+      else
+        lists.each do |list|
+          puts list.name
+        end
+      end
+    end
+    
+    desc "cards", "Get cards"
+    option "board-id", :desc => "Id of Trello board", :required => true
+    def cards
+      process_global_options options
+      require_trello_credentials
+  
+      trello = TrelloWrapper.new(@@settings)
+      board = trello.board(options["board-id"])
+      cards = board.cards
+  
+      if @@settings.raw
+        cards_as_json = []
+        cards.each do |card|
+          cards_as_json.push(card.as_json)
+        end
+        puts "["
+        puts cards_as_json.join(",")
+        puts "]"
+      else
+        cards.each do |card|
+          puts card.name
+        end
+      end
+    end
+    
+    desc "checklists", "Get checklists"
+    option "board-id", :desc => "Id of Trello board", :required => true
+    def checklists
+      process_global_options options
+      require_trello_credentials
+  
+      trello = TrelloWrapper.new(@@settings)
+      board = trello.board(options["board-id"])
+      board.cards.each do |card|
+        card.checklists.each do |checklist|
+          puts checklist.name
+        end
+      end
+    end
+    
+    desc "description", "Reads description"
+    option "card-id", :desc => "Id of card", :required => true
+    def description
+      process_global_options options
+      require_trello_credentials
+  
+      trello = TrelloWrapper.new(@@settings)
+  
+      puts trello.get_description(options["card-id"])
+    end
+    
+    desc "url [URL-FRAGMENT]", "Get raw JSON from Trello API"
+    long_desc <<EOT
+Get raw JSON from Trello using the given URL fragment. Trollolo adds the server
+part and API version as well as the credentials from the Trollolo configuration.
+
+As example, the command
+
+  trollolo get-raw lists/53186e8391ef8671265eba9f/cards?filter=open
+
+evaluates to the access of
+
+  https://api.trello.com/1/lists/53186e8391ef8671265eba9f/cards?filter=open&key=xxx&token=yyy
+EOT
+    def url(url_fragment)
+      process_global_options options
+      require_trello_credentials
+  
+      url = "https://api.trello.com/1/#{url_fragment}"
+      if url_fragment =~ /\?/
+        url += "&"
+      else
+        url += "?"
+      end
+      url += "key=#{@@settings.developer_public_key}&token=#{@@settings.member_token}"
+      STDERR.puts "Calling #{url}"
+  
+      response = Net::HTTP.get_response(URI.parse(url))
+      print JSON.pretty_generate(JSON.parse(response.body))
+    end 
+  end
+  
+  desc "get SUBCOMMAND ...ARGS", "get Trello resources"
+  subcommand "get", Get
 end

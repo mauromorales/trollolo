@@ -30,7 +30,7 @@ describe "command line" do
   end
 
   it "asks for authorization data" do
-    expect(run_command(cmd: credentials_input_wrapper, args: ["get-cards", "--board-id=myboardid"])).to exit_with_success("")
+    expect(run_command(cmd: credentials_input_wrapper, args: ["get", "cards", "--board-id=myboardid"])).to exit_with_success("")
   end
 
   describe "burndown chart" do
